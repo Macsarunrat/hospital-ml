@@ -46,8 +46,8 @@ def main():
         },
     )
 
-    # 3. เตรียมชุดข้อมูล (Data Pipeline)
-    train_ds, val_ds, test_ds, test_labels = create_datasets(batch_size=global_batch_size)
+    # 3. เตรียมชุดข้อมูล (Data Pipeline: คืน test_paths สำหรับทำ Error Analysis)
+    train_ds, val_ds, test_ds, test_labels, test_paths = create_datasets(batch_size=global_batch_size)
 
     # 4. สร้างและ Compile โมเดลภายใต้ Strategy Scope
     with strategy.scope():
@@ -99,19 +99,22 @@ def main():
     print(f"\nบันทึกโมเดลรอบสุดท้ายไปที่: {RiceConfig.FINAL_MODEL_PATH}")
     print(f"บันทึกโมเดลรอบที่ดีที่สุดไปที่: {RiceConfig.BEST_MODEL_PATH}")
 
-    # 8. ประเมินผล พล็อตกราฟ และเซฟตาราง (ส่งต่อให้ evaluate.py)
+    # 8. ประเมินผล พล็อตกราฟ และเซฟตาราง (ส่งต่อให้ evaluate.py พร้อมรูปวิเคราะห์ 12 เคส)
     eval_metrics = evaluate_model(
         model=model,
         test_dataset=test_ds,
         test_labels=test_labels,
+        test_paths=test_paths,
         history1=history1,
         history2=history2,
     )
 
-    # 9. บันทึกผลขึ้น WandB
+    # 9. บันทึกผลและภาพทั้งหมดขึ้น WandB
     logger.log_metrics(eval_metrics)
     logger.log_image("loss_curve", RiceConfig.LOSS_PLOT_PATH)
     logger.log_image("scatter_prediction", RiceConfig.SCATTER_PLOT_PATH)
+    logger.log_image("error_distribution", RiceConfig.ERROR_DIST_PLOT_PATH)
+    logger.log_image("worst_predictions", RiceConfig.WORST_PREDS_PLOT_PATH)
     logger.finish()
 
     print("\nกระบวนการเทรนและประเมินผลเสร็จสมบูรณ์เรียบร้อยแล้ว!")

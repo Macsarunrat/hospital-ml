@@ -91,7 +91,7 @@ def load_and_preprocessing(path, label):
 
 
 def create_datasets(batch_size=None):
-    """สร้าง tf.data.Dataset สำหรับ Train, Val, และ Test พร้อม Batching และ Prefetch"""
+    """สร้าง tf.data.Dataset สำหรับ Train, Val, และ Test พร้อมคืน test_path สำหรับทำ Error Analysis"""
     actual_batch_size = batch_size or RiceConfig.BATCH_SIZE_PER_REPLICA
 
     train_path, val_path, test_path, train_label, val_label, test_label = (
@@ -111,4 +111,4 @@ def create_datasets(batch_size=None):
     test_ds = test_ds.map(load_and_preprocessing, num_parallel_calls=tf.data.AUTOTUNE)
     test_ds = test_ds.batch(actual_batch_size).prefetch(buffer_size=tf.data.AUTOTUNE)
 
-    return train_ds, val_ds, test_ds, test_label
+    return train_ds, val_ds, test_ds, test_label, test_path
