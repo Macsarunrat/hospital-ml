@@ -5,9 +5,11 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
 
+from rice.src.config import RiceConfig
+
 
 def find_image_files():
-    """Find bowl images from Kaggle dataset input paths with fallback support."""
+    """ค้นหาไฟล์ภาพถ้วยข้าวจาก Input paths บน Kaggle พร้อมระบบ Auto-fallback"""
     potential_patterns = [
         "/kaggle/input/datasets/macsarun/cropped/bowl/*.jpg",
         "/kaggle/input/cropped/bowl/*.jpg",
@@ -18,16 +20,20 @@ def find_image_files():
     for pattern in potential_patterns:
         files = glob(pattern, recursive=True)
         if files:
-            print(f"Found {len(files)} images using pattern: {pattern}")
+            print(f"พบรูปภาพจำนวน {len(files)} รูป จากตำแหน่ง: {pattern}")
             return files
 
     raise FileNotFoundError(
-        "No images found. Please ensure the dataset 'macsarun/Cropped' is added in Kaggle."
+        "ไม่พบไฟล์รูปภาพถ้วยข้าว กรุณาตรวจสอบว่าได้ Add Dataset 'macsarun/Cropped' เข้ามาใน Kaggle แล้วหรือยัง"
     )
 
 
-def get_data_splits(test_size=0.1, val_size=0.2, random_state=42):
-    """Load image paths and parse labels from filenames, then split into train/val/test."""
+def get_data_splits(
+    test_size=RiceConfig.TEST_SPLIT,
+    val_size=RiceConfig.VAL_SPLIT,
+    random_state=RiceConfig.RANDOM_STATE,
+):
+    """อ่านข้อมูลและสกัด Label น้ำหนักจากชื่อภาพ แล้วแบ่งเป็น Train / Val / Test"""
     images = find_image_files()
 
     initial_label = []
@@ -58,61 +64,51 @@ def get_data_splits(test_size=0.1, val_size=0.2, random_state=42):
     all_paths = df["full_path"].values
     all_labels = df["remaining_label"].values.astype("float32")
 
-    # Test dataset (10%)
+    # แบ่ง Test dataset (10%)
     train_val_path, test_path, train_val_label, test_label = train_test_split(
         all_paths, all_labels, test_size=test_size, random_state=random_state
     )
 
-    # Train (approx 72%) + Val (approx 18%)
+    # แบ่ง Train (ประมาณ 72%) และ Val (ประมาณ 18%)
     train_path, val_path, train_label, val_label = train_test_split(
         train_val_path, train_val_label, test_size=val_size, random_state=random_state
     )
 
     print(
-        f"Dataset split -> Train: {len(train_path)}, Val: {len(val_path)}, Test: {len(test_path)}"
+        f"แบ่งชุดข้อมูลเรียบร้อย -> Train: {len(train_path)}, Val: {len(val_path)}, Test: {len(test_path)}"
     )
     return train_path, val_path, test_path, train_label, val_label, test_label
 
 
 def load_and_preprocessing(path, label):
-    """Read jpeg, decode, and resize with pad to 224x224."""
+    """ฟังก์ชันโหลดรูปภาพแบบ Pure TensorFlow เพื่อทำ Image Pipeline"""
     image_raw = tf.io.read_file(path)
-    image = tf.image.decode_jpeg(image_raw, channels=3)
-    image = tf.image.resize_with_pad(image, 224, 224)
+    image = tf.image.decode_jpeg(image_raw, channels=RiceConfig.IMAGE_CHANNELS)
+    image = tf.image.resize_with_pad(
+        image, RiceConfig.IMAGE_SIZE[0], RiceConfig.IMAGE_SIZE[1]
+    )
     return image, label
 
 
-def create_datasets(batch_size=32):
-    """Build tf.data pipelines for Train, Validation, and Test."""
+def create_datasets(batch_size=None):
+    """สร้าง tf.data.Dataset สำหรับ Train, Val, และ Test พร้อม Batching และ Prefetch"""
+    actual_batch_size = batch_size or RiceConfig.BATCH_SIZE_PER_REPLICA
+
     train_path, val_path, test_path, train_label, val_label, test_label = (
         get_data_splits()
     )
 
-    train_dataset = tf.data.Dataset.from_tensor_slices(
-        (train_path, train_label)
-    )
-    train_dataset = train_dataset.map(
-        load_and_preprocessing, num_parallel_calls=tf.data.AUTOTUNE
-    )
-    train_dataset = train_dataset.shuffle(buffer_size=len(train_path)).batch(
-        batch_size
-    )
-    train_dataset = train_dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
+    train_ds = tf.data.Dataset.from_tensor_slices((train_path, train_label))
+    train_ds = train_ds.map(load_and_preprocessing, num_parallel_calls=tf.data.AUTOTUNE)
+    train_ds = train_ds.shuffle(buffer_size=len(train_path)).batch(actual_batch_size)
+    train_ds = train_ds.prefetch(buffer_size=tf.data.AUTOTUNE)
 
-    val_dataset = tf.data.Dataset.from_tensor_slices((val_path, val_label))
-    val_dataset = val_dataset.map(
-        load_and_preprocessing, num_parallel_calls=tf.data.AUTOTUNE
-    )
-    val_dataset = val_dataset.batch(batch_size).prefetch(
-        buffer_size=tf.data.AUTOTUNE
-    )
+    val_ds = tf.data.Dataset.from_tensor_slices((val_path, val_label))
+    val_ds = val_ds.map(load_and_preprocessing, num_parallel_calls=tf.data.AUTOTUNE)
+    val_ds = val_ds.batch(actual_batch_size).prefetch(buffer_size=tf.data.AUTOTUNE)
 
-    test_dataset = tf.data.Dataset.from_tensor_slices((test_path, test_label))
-    test_dataset = test_dataset.map(
-        load_and_preprocessing, num_parallel_calls=tf.data.AUTOTUNE
-    )
-    test_dataset = test_dataset.batch(batch_size).prefetch(
-        buffer_size=tf.data.AUTOTUNE
-    )
+    test_ds = tf.data.Dataset.from_tensor_slices((test_path, test_label))
+    test_ds = test_ds.map(load_and_preprocessing, num_parallel_calls=tf.data.AUTOTUNE)
+    test_ds = test_ds.batch(actual_batch_size).prefetch(buffer_size=tf.data.AUTOTUNE)
 
-    return train_dataset, val_dataset, test_dataset, test_label
+    return train_ds, val_ds, test_ds, test_label

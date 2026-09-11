@@ -1,0 +1,122 @@
+import os
+import numpy as np
+import tensorflow as tf
+from rice.src.config import RiceConfig
+
+
+def find_model_file(model_path=None):
+    """ค้นหาไฟล์โมเดลอัตโนมัติ โดยให้ความสำคัญกับโฟลเดอร์ rice/output/ ก่อน"""
+    if model_path and os.path.exists(model_path):
+        return model_path
+
+    # ลำดับโฟลเดอร์ที่ระบบจะเข้าไปตรวจหาไฟล์โมเดล
+    candidates = [
+        model_path,
+        os.path.join("rice", "output", "best_rice_model.keras"),
+        os.path.join("rice", "output", "Rice_regression.keras"),
+        RiceConfig.BEST_MODEL_PATH,
+        "best_rice_model.keras",
+        "Rice_regression.keras",
+        os.path.join("output", "best_rice_model.keras"),
+        "/kaggle/working/best_rice_model.keras",
+    ]
+
+    for path in candidates:
+        if path and os.path.exists(path):
+            print(f"[Predict] ตรวจพบโมเดลที่: {path}")
+            return path
+
+    raise FileNotFoundError(
+        "❌ ไม่พบไฟล์โมเดล! กรุณาตรวจสอบว่ามีไฟล์ 'best_rice_model.keras' "
+        "อยู่ในโฟลเดอร์ 'rice/output/' แล้วหรือยัง"
+    )
+
+
+def load_trained_model(model_path=None):
+    """โหลดโมเดลที่เทรนแล้วขึ้นมาใช้งาน"""
+    actual_path = find_model_file(model_path)
+    print(f"[Predict] กำลังโหลดโมเดลจาก {actual_path}...")
+    return tf.keras.models.load_model(actual_path)
+
+
+def preprocess_image(image_path_or_bytes, image_size=RiceConfig.IMAGE_SIZE):
+    """แปลงรูปภาพ 1 รูปให้เป็น Tensor พร้อมส่งเข้าโมเดล"""
+    if isinstance(image_path_or_bytes, str):
+        if not os.path.exists(image_path_or_bytes):
+            raise FileNotFoundError(f"ไม่พบไฟล์รูปภาพ: {image_path_or_bytes}")
+        image_raw = tf.io.read_file(image_path_or_bytes)
+    else:
+        image_raw = image_path_or_bytes
+
+    image = tf.image.decode_jpeg(image_raw, channels=RiceConfig.IMAGE_CHANNELS)
+    image = tf.image.resize_with_pad(image, image_size[0], image_size[1])
+    image = tf.expand_dims(image, axis=0)
+    return image
+
+
+def predict_rice_weight(image_path, model=None, model_path=None):
+    """ทำนายน้ำหนักข้าวที่เหลือจากภาพเดี่ยว (กรัม)"""
+    if model is None:
+        model = load_trained_model(model_path)
+
+    image_tensor = preprocess_image(image_path)
+    predicted_weight = model.predict(image_tensor, verbose=0)[0][0]
+    return float(np.round(predicted_weight, 2))
+
+
+def estimate_rice_nutrition(
+    image_path,
+    standard_weight_g=RiceConfig.DEFAULT_STANDARD_WEIGHT_G,
+    model=None,
+    model_path=None,
+):
+    """ฟังก์ชันระดับคลินิกสำหรับพยาบาลและนักกำหนดอาหาร:
+
+    ประเมินปริมาณการรับประทาน, พลังงาน, และโปรตีนที่คนไข้ได้รับจริงจากภาพถ่ายหลังทาน
+    """
+    if model is None:
+        model = load_trained_model(model_path)
+
+    # 1. ให้ AI ทายน้ำหนักข้าวที่เหลือก้นถ้วย
+    remaining_g = predict_rice_weight(image_path, model=model)
+
+    # ตัดช่วงให้อยู่ระหว่าง 0 ถึง น้ำหนักเต็มถ้วย (ป้องกันค่าหลุด)
+    remaining_g = float(np.clip(remaining_g, 0.0, standard_weight_g))
+
+    # 2. คำนวณปริมาณที่ทานไปจริง
+    intake_g = standard_weight_g - remaining_g
+    intake_percent = (intake_g / standard_weight_g) * 100.0
+
+    # 3. คำนวณสารอาหารตามสัดส่วนที่ทานจริง (ต่อ 100 กรัม)
+    ratio = intake_g / 100.0
+    calories = ratio * RiceConfig.CALORIES_PER_100G
+    protein = ratio * RiceConfig.PROTEIN_PER_100G
+    carbs = ratio * RiceConfig.CARBS_PER_100G
+    fat = ratio * RiceConfig.FAT_PER_100G
+
+    return {
+        "standard_weight_g": standard_weight_g,
+        "remaining_weight_g": round(remaining_g, 2),
+        "intake_weight_g": round(intake_g, 2),
+        "intake_percent": round(intake_percent, 1),
+        "protein_g": round(protein, 2),
+        "calories_kcal": round(calories, 1),
+        "carbs_g": round(carbs, 2),
+        "fat_g": round(fat, 2),
+    }
+
+
+if __name__ == "__main__":
+    import sys
+    import json
+
+    if len(sys.argv) > 1:
+        test_img = sys.argv[1]
+        custom_model = sys.argv[2] if len(sys.argv) > 2 else None
+        nutrition = estimate_rice_nutrition(test_img, model_path=custom_model)
+        print(f"\n📊 ผลการประเมินโภชนาการสำหรับภาพ: {test_img}")
+        print(json.dumps(nutrition, indent=4, ensure_ascii=False))
+    else:
+        print("วิธีใช้งาน:")
+        print("  python -m rice.src.predict <path_to_image.jpg>")
+        print("  python -m rice.src.predict <path_to_image.jpg> <path_to_model.keras>")
