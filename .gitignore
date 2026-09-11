@@ -8,6 +8,8 @@ __pycache__/
 *.pt
 *.pth
 *.onnx
+*.keras
+*.h5
 runs/
 wandb/
 
