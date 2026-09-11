@@ -1,0 +1,22 @@
+[project]
+name = "hospital-ml"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Sarunrat", email = "tee20122538@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "kaggle>=2.2.4",
+    "pyyaml>=6.0.3",
+    "ultralytics>=8.4.145",
+    "wandb>=0.30.0",
+]
+
+[project.scripts]
+hospital-ml = "hospital_ml:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"

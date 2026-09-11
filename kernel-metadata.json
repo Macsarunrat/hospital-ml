@@ -1,0 +1,13 @@
+{
+  "id": "macsarun/hospital-ml-training",
+  "title": "Hospital ML Training",
+  "code_file": "runner.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_internet": "true",
+  "dataset_sources": [
+    "macsarun/Onlyrice","macsarun/Cropped"
+  ]
+}
