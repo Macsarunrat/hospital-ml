@@ -10,6 +10,7 @@
   "enable_internet": "true",
   "dataset_sources": [
     "macsarun/Onlyrice",
-    "macsarun/Cropped"
+    "macsarun/Cropped",
+    "macsarun/hospital-secrets"
   ]
 }

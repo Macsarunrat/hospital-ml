@@ -204,12 +204,121 @@ def evaluate_model(model, test_dataset, test_labels, test_paths=None, history1=N
     try:
         plot_loss_curve(history1, history2)
         plot_scatter_prediction(actual, predictions)
-        plot_error_distribution(actual, predictions)             # 👈 หัวข้อ 1: Error Distribution
-        save_metrics_summary(metrics)                            # 👈 หัวข้อ 2: Metrics JSON
+        plot_error_distribution(actual, predictions)
+        save_metrics_summary(metrics)
         if test_paths:
-            plot_worst_predictions(test_paths, actual, predictions, top_k=12)  # 👈 หัวข้อ 3: ตาราง 12 รูปทายพลาดสุด
+            plot_worst_predictions(test_paths, actual, predictions, top_k=12)
         save_prediction_table(actual, predictions)
     except Exception as e:
         print(f"[Evaluate] คำเตือน: เกิดข้อผิดพลาดในการบันทึกภาพบางส่วน: {e}")
+
+    return metrics
+
+
+def evaluate_kfold_summary(fold_metrics_list):
+    """คำนวณ Mean และ Std ของแต่ละ Metric จากทุก Fold และบันทึกเป็นตาราง CSV และ JSON"""
+    print("\n" + "=" * 60)
+    print("สรุปผลการประเมิน K-Fold Cross-Validation (Mean ± Std)")
+    print("=" * 60)
+
+    # แปลง List of dicts เป็น DataFrame
+    df = pd.DataFrame(fold_metrics_list)
+    metric_cols = ["mae", "rmse", "r2", "acc_within_5g", "acc_within_10g"]
+
+    summary_data = []
+    summary_json = {
+        "folds": fold_metrics_list,
+        "mean": {},
+        "std": {},
+    }
+
+    print(f"{'Fold':<8}{'MAE (g)':<12}{'RMSE (g)':<12}{'R²':<10}{'Acc ±5g (%)':<15}{'Acc ±10g (%)':<15}")
+    print("-" * 72)
+
+    for _, row in df.iterrows():
+        f_idx = int(row["fold"]) if "fold" in row else _ + 1
+        print(
+            f"Fold {f_idx:<3} "
+            f"{row['mae']:<12.2f}"
+            f"{row['rmse']:<12.2f}"
+            f"{row['r2']:<10.4f}"
+            f"{row['acc_within_5g']:<15.1f}"
+            f"{row['acc_within_10g']:<15.1f}"
+        )
+
+    print("-" * 72)
+    mean_series = df[metric_cols].mean()
+    std_series = df[metric_cols].std()
+
+    print(
+        f"{'Mean':<8}"
+        f"{mean_series['mae']:<12.2f}"
+        f"{mean_series['rmse']:<12.2f}"
+        f"{mean_series['r2']:<10.4f}"
+        f"{mean_series['acc_within_5g']:<15.1f}"
+        f"{mean_series['acc_within_10g']:<15.1f}"
+    )
+    print(
+        f"{'Std':<8}"
+        f"±{std_series['mae']:<11.2f}"
+        f"±{std_series['rmse']:<11.2f}"
+        f"±{std_series['r2']:<9.4f}"
+        f"±{std_series['acc_within_5g']:<14.1f}"
+        f"±{std_series['acc_within_10g']:<14.1f}"
+    )
+    print("=" * 72)
+
+    # บันทึกเป็น CSV
+    df.to_csv(RiceConfig.KFOLD_SUMMARY_CSV_PATH, index=False)
+    print(f"[Evaluate] บันทึกตารางสรุป K-Fold CSV ไปที่: {RiceConfig.KFOLD_SUMMARY_CSV_PATH}")
+
+    # บันทึก JSON
+    for col in metric_cols:
+        summary_json["mean"][col] = round(float(mean_series[col]), 4)
+        summary_json["std"][col] = round(float(std_series[col]), 4)
+
+    with open(RiceConfig.KFOLD_METRICS_JSON_PATH, "w", encoding="utf-8") as f:
+        json.dump(summary_json, f, indent=4, ensure_ascii=False)
+    print(f"[Evaluate] บันทึกสรุปสถิติ K-Fold JSON ไปที่: {RiceConfig.KFOLD_METRICS_JSON_PATH}")
+
+    return summary_json
+
+
+def evaluate_ensemble(models, test_dataset, test_labels, test_paths=None):
+    """รวมพลังทำนาย (Ensemble Mean Prediction) จากทุก Fold บน Hold-out Test Set"""
+    print("\n" + "=" * 60)
+    print(f"เริ่มการทำ Ensemble Inference จากโมเดลทั้งหมด {len(models)} ตัว บน Test Set")
+    print("=" * 60)
+
+    all_preds = []
+    for idx, model in enumerate(models):
+        preds = model.predict(test_dataset).flatten()
+        all_preds.append(preds)
+        print(f"  - Model Fold {idx+1} ทำนายเสร็จสิ้น")
+
+    # หาค่าเฉลี่ยของผลทำนาย (Ensemble Average)
+    ensemble_preds = np.mean(all_preds, axis=0)
+    actual = np.array(test_labels)
+
+    # คำนวณ Metrics รวม
+    metrics = calculate_metrics(actual, ensemble_preds)
+    print("\nผลการประเมิน Ensemble (Model Averaging):")
+    print(f"  - Ensemble MAE  : {metrics['mae']:.2f} กรัม")
+    print(f"  - Ensemble RMSE : {metrics['rmse']:.2f}")
+    print(f"  - Ensemble R²   : {metrics['r2']:.4f}")
+    print(f"  - แม่นยำในกรอบ ±5g  : {metrics['acc_within_5g']:.1f} %")
+    print(f"  - แม่นยำในกรอบ ±10g : {metrics['acc_within_10g']:.1f} %")
+
+    # บันทึกกราฟและตาราง Ensemble
+    try:
+        plot_scatter_prediction(actual, ensemble_preds, save_path=RiceConfig.ENSEMBLE_SCATTER_PATH)
+        plot_error_distribution(actual, ensemble_preds, save_path=RiceConfig.ENSEMBLE_ERROR_DIST_PATH)
+        if test_paths:
+            plot_worst_predictions(
+                test_paths, actual, ensemble_preds, top_k=12, save_path=RiceConfig.ENSEMBLE_WORST_PREDS_PATH
+            )
+        save_prediction_table(actual, ensemble_preds, save_path=RiceConfig.ENSEMBLE_PRED_CSV_PATH)
+    except Exception as e:
+        print(f"[Evaluate] คำเตือน: เกิดข้อผิดพลาดในการบันทึกผล Ensemble: {e}")
 
     return metrics

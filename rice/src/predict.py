@@ -9,7 +9,6 @@ def find_model_file(model_path=None):
     if model_path and os.path.exists(model_path):
         return model_path
 
-    # ลำดับโฟลเดอร์ที่ระบบจะเข้าไปตรวจหาไฟล์โมเดล
     candidates = [
         model_path,
         os.path.join("rice", "output", "best_rice_model.keras"),
@@ -23,19 +22,18 @@ def find_model_file(model_path=None):
 
     for path in candidates:
         if path and os.path.exists(path):
-            print(f"[Predict] ตรวจพบโมเดลที่: {path}")
+            print(f"[Predict] Model found at: {path}")
             return path
 
     raise FileNotFoundError(
-        "❌ ไม่พบไฟล์โมเดล! กรุณาตรวจสอบว่ามีไฟล์ 'best_rice_model.keras' "
-        "อยู่ในโฟลเดอร์ 'rice/output/' แล้วหรือยัง"
+        "Model file not found. Please verify that 'best_rice_model.keras' exists in 'rice/output/'."
     )
 
 
 def load_trained_model(model_path=None):
     """โหลดโมเดลที่เทรนแล้วขึ้นมาใช้งาน"""
     actual_path = find_model_file(model_path)
-    print(f"[Predict] กำลังโหลดโมเดลจาก {actual_path}...")
+    print(f"[Predict] Loading model from {actual_path}...")
     return tf.keras.models.load_model(actual_path)
 
 
@@ -43,7 +41,7 @@ def preprocess_image(image_path_or_bytes, image_size=RiceConfig.IMAGE_SIZE):
     """แปลงรูปภาพ 1 รูปให้เป็น Tensor พร้อมส่งเข้าโมเดล"""
     if isinstance(image_path_or_bytes, str):
         if not os.path.exists(image_path_or_bytes):
-            raise FileNotFoundError(f"ไม่พบไฟล์รูปภาพ: {image_path_or_bytes}")
+            raise FileNotFoundError(f"Image file not found: {image_path_or_bytes}")
         image_raw = tf.io.read_file(image_path_or_bytes)
     else:
         image_raw = image_path_or_bytes
@@ -77,17 +75,12 @@ def estimate_rice_nutrition(
     if model is None:
         model = load_trained_model(model_path)
 
-    # 1. ให้ AI ทายน้ำหนักข้าวที่เหลือก้นถ้วย
     remaining_g = predict_rice_weight(image_path, model=model)
-
-    # ตัดช่วงให้อยู่ระหว่าง 0 ถึง น้ำหนักเต็มถ้วย (ป้องกันค่าหลุด)
     remaining_g = float(np.clip(remaining_g, 0.0, standard_weight_g))
 
-    # 2. คำนวณปริมาณที่ทานไปจริง
     intake_g = standard_weight_g - remaining_g
     intake_percent = (intake_g / standard_weight_g) * 100.0
 
-    # 3. คำนวณสารอาหารตามสัดส่วนที่ทานจริง (ต่อ 100 กรัม)
     ratio = intake_g / 100.0
     calories = ratio * RiceConfig.CALORIES_PER_100G
     protein = ratio * RiceConfig.PROTEIN_PER_100G
@@ -114,9 +107,9 @@ if __name__ == "__main__":
         test_img = sys.argv[1]
         custom_model = sys.argv[2] if len(sys.argv) > 2 else None
         nutrition = estimate_rice_nutrition(test_img, model_path=custom_model)
-        print(f"\n📊 ผลการประเมินโภชนาการสำหรับภาพ: {test_img}")
+        print(f"\nNutrition Assessment for: {test_img}")
         print(json.dumps(nutrition, indent=4, ensure_ascii=False))
     else:
-        print("วิธีใช้งาน:")
+        print("Usage:")
         print("  python -m rice.src.predict <path_to_image.jpg>")
         print("  python -m rice.src.predict <path_to_image.jpg> <path_to_model.keras>")
