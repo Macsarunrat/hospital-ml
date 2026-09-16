@@ -7,8 +7,9 @@ class RiceConfig:
     # 1. Task Name
     TASK_NAME = "rice"
 
-    # 2. Model Architecture
-    BACKBONE = os.getenv("BACKBONE", "EfficientNetB0")
+    # 2. Model Architecture (เลือกสถาปัตยกรรมโมเดลที่ต้องการเทรนได้ที่นี่โดยตรง)
+    # เช่น: "EfficientNetB0", "EfficientNetB1", "EfficientNetB2", "EfficientNetB3", "ResNet50"
+    BACKBONE = "EfficientNetB1"
     WEIGHTS = "imagenet"
     DENSE_UNITS = 64
     DROPOUT_RATE = 0.3
