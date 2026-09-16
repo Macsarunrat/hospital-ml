@@ -7,8 +7,23 @@ class RiceConfig:
     # 1. Task Name
     TASK_NAME = "rice"
 
-    # 2. Image & Data Settings
-    IMAGE_SIZE = (224, 224)
+    # 2. Model Architecture
+    BACKBONE = os.getenv("BACKBONE", "EfficientNetB0")
+    WEIGHTS = "imagenet"
+    DENSE_UNITS = 64
+    DROPOUT_RATE = 0.3
+
+    # 3. Image & Data Settings
+    BACKBONE_IMAGE_SIZES = {
+        "EfficientNetB0": (224, 224),
+        "EfficientNetB1": (240, 240),
+        "EfficientNetB2": (260, 260),
+        "EfficientNetB3": (300, 300),
+        "EfficientNetB4": (380, 380),
+    }
+    IMAGE_SIZE = BACKBONE_IMAGE_SIZES.get(
+        BACKBONE, (240, 240) if "B1" in BACKBONE else (224, 224)
+    )
     IMAGE_CHANNELS = 3
     BATCH_SIZE_PER_REPLICA = 32
     TEST_SPLIT = 0.1
@@ -16,12 +31,6 @@ class RiceConfig:
     RANDOM_STATE = 42
     USE_KFOLD = True
     NUM_FOLDS = 5
-
-    # 3. Model Architecture
-    BACKBONE = "EfficientNetB0"
-    WEIGHTS = "imagenet"
-    DENSE_UNITS = 64
-    DROPOUT_RATE = 0.3
 
     # 4. Training Phase 1: Top Layers
     PHASE1_EPOCHS = 100
@@ -56,10 +65,13 @@ class RiceConfig:
     ENSEMBLE_SCATTER_PATH = os.path.join(OUTPUT_DIR, f"{TASK_NAME}_ensemble_scatter.png")
     ENSEMBLE_ERROR_DIST_PATH = os.path.join(OUTPUT_DIR, f"{TASK_NAME}_ensemble_error_distribution.png")
     ENSEMBLE_WORST_PREDS_PATH = os.path.join(OUTPUT_DIR, f"{TASK_NAME}_ensemble_worst_predictions.png")
+    STRATIFIED_CSV_PATH = os.path.join(OUTPUT_DIR, f"{TASK_NAME}_stratified_error.csv")
+    STRATIFIED_PLOT_PATH = os.path.join(OUTPUT_DIR, f"{TASK_NAME}_stratified_error.png")
+    VISUAL_GALLERY_PATH = os.path.join(OUTPUT_DIR, f"{TASK_NAME}_visual_predictions.png")
 
     # 8. WandB Logging
     WANDB_PROJECT = "hospital-ml"
-    WANDB_TASK = f"{TASK_NAME}-regression-t4x2"
+    WANDB_TASK = f"{TASK_NAME}-{BACKBONE.lower()}-regression-t4x2"
 
     # 9. Clinical Nutrition Standards (ตารางคุณค่าโภชนาการข้าวสวยสุก ต่อ 100 กรัม)
     DEFAULT_STANDARD_WEIGHT_G = 150.0  # น้ำหนักข้าวมาตรฐาน 1 ถ้วยของ รพ. (กรัม)

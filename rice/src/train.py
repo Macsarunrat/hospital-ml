@@ -175,6 +175,8 @@ def main():
         logger.log_image("ensemble_scatter", RiceConfig.ENSEMBLE_SCATTER_PATH)
         logger.log_image("ensemble_error_dist", RiceConfig.ENSEMBLE_ERROR_DIST_PATH)
         logger.log_image("ensemble_worst_preds", RiceConfig.ENSEMBLE_WORST_PREDS_PATH)
+        logger.log_image("stratified_error", RiceConfig.STRATIFIED_PLOT_PATH)
+        logger.log_image("visual_predictions", RiceConfig.VISUAL_GALLERY_PATH)
 
     else:
         # ========================================================

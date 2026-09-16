@@ -108,12 +108,34 @@ def save_metrics_summary(metrics, save_path=None):
     print(f"[Evaluate] บันทึกไฟล์สรุปสถิติ JSON ไปที่: {save_path}")
 
 
+def resolve_image_path(img_path):
+    """ตรวจสอบและค้นหาตำแหน่งภาพอัตโนมัติหาก path เดิมไม่ตรง (ป้องกัน Kaggle path mismatch)"""
+    if os.path.exists(img_path):
+        return img_path
+
+    filename = os.path.basename(img_path)
+    search_dirs = [
+        "/kaggle/input/datasets/macsarun/cropped/bowl",
+        "/kaggle/input/cropped/bowl",
+        "/kaggle/input/Cropped/bowl",
+        "/kaggle/input",
+        "rice/output",
+    ]
+    for directory in search_dirs:
+        candidate = os.path.join(directory, filename)
+        if os.path.exists(candidate):
+            return candidate
+
+    return img_path
+
+
 def plot_worst_predictions(test_paths, actual_labels, predictions, save_path=None, top_k=12):
     """หัวข้อที่ 3: รวมภาพเคสที่ AI ทายพลาดมากที่สุด (Top-K Worst Cases) แสดงเป็น Grid หลาย ๆ รูป
 
     เพื่อใช้ทำ Error Analysis หาสาเหตุว่าทำไมถึงทายรูปกลุ่มนี้ผิด
     """
-    if not test_paths:
+    if test_paths is None or len(test_paths) == 0:
+        print("[Evaluate] คำเตือน: ไม่พบ test_paths ข้ามการบันทึก worst predictions")
         return
 
     save_path = save_path or RiceConfig.WORST_PREDS_PLOT_PATH
@@ -129,25 +151,32 @@ def plot_worst_predictions(test_paths, actual_labels, predictions, save_path=Non
     rows = int(np.ceil(len(worst_indices) / cols))
 
     fig, axes = plt.subplots(rows, cols, figsize=(16, 4 * rows))
-    axes = axes.flatten()
+    if hasattr(axes, "flatten"):
+        axes = axes.flatten()
+    else:
+        axes = [axes]
 
     for idx, sample_idx in enumerate(worst_indices):
-        img_path = test_paths[sample_idx]
+        raw_path = str(test_paths[sample_idx])
+        img_path = resolve_image_path(raw_path)
         act = actual[sample_idx]
         pr = pred[sample_idx]
         err = errors[sample_idx]
 
         try:
-            img = Image.open(img_path)
-            axes[idx].imshow(img)
+            if os.path.exists(img_path):
+                img = Image.open(img_path)
+                axes[idx].imshow(img)
+            else:
+                axes[idx].text(0.5, 0.5, f"Image not found:\n{os.path.basename(img_path)}", ha="center", va="center")
             axes[idx].set_title(
                 f"Rank #{idx+1} Worst\nActual: {act:.1f}g | Pred: {pr:.1f}g\nError: {err:.1f}g",
                 fontsize=10,
                 color="darkred",
                 fontweight="bold",
             )
-        except Exception:
-            axes[idx].text(0.5, 0.5, "Image Error", ha="center")
+        except Exception as e:
+            axes[idx].text(0.5, 0.5, f"Error: {e}", ha="center", va="center")
 
         axes[idx].axis("off")
 
@@ -206,13 +235,176 @@ def evaluate_model(model, test_dataset, test_labels, test_paths=None, history1=N
         plot_scatter_prediction(actual, predictions)
         plot_error_distribution(actual, predictions)
         save_metrics_summary(metrics)
-        if test_paths:
+        if test_paths is not None and len(test_paths) > 0:
             plot_worst_predictions(test_paths, actual, predictions, top_k=12)
+            plot_visual_gallery(test_paths, actual, predictions, n_samples=16)
         save_prediction_table(actual, predictions)
+        stratified_df = calculate_stratified_errors(actual, predictions)
+        plot_stratified_bars(stratified_df)
     except Exception as e:
         print(f"[Evaluate] คำเตือน: เกิดข้อผิดพลาดในการบันทึกภาพบางส่วน: {e}")
 
     return metrics
+
+
+def calculate_stratified_errors(actual_labels, predictions, bins=None, labels=None, save_path=None):
+    """วิเคราะห์ความแม่นยำตามช่วงน้ำหนัก (Stratified Error by Weight Bin)"""
+    save_path = save_path or RiceConfig.STRATIFIED_CSV_PATH
+    actual = np.array(actual_labels)
+    pred = np.array(predictions)
+    errors = np.abs(pred - actual)
+
+    if bins is None:
+        bins = [0, 30, 70, 110, 300]
+    if labels is None:
+        labels = ["0 - 30g (เหลือน้อย)", "31 - 70g (ปานกลาง)", "71 - 110g (ค่อนข้างเยอะ)", "> 110g (เกือบเต็ม)"]
+
+    bin_assignments = pd.cut(actual, bins=bins, labels=labels, right=True, include_lowest=True)
+
+    records = []
+    print("\n" + "-" * 75)
+    print(f"{'Weight Bin':<26}{'Samples':<10}{'MAE (g)':<12}{'RMSE (g)':<12}{'Acc ±5g (%)':<15}")
+    print("-" * 75)
+
+    for lab in labels:
+        mask = bin_assignments == lab
+        count = np.sum(mask)
+        if count > 0:
+            act_sub = actual[mask]
+            pred_sub = pred[mask]
+            err_sub = errors[mask]
+
+            mae = np.mean(err_sub)
+            rmse = np.sqrt(np.mean((pred_sub - act_sub) ** 2))
+            acc_5g = np.mean(err_sub <= 5.0) * 100
+            acc_10g = np.mean(err_sub <= 10.0) * 100
+            mape = np.mean(err_sub / np.maximum(act_sub, 1.0)) * 100
+
+            records.append({
+                "weight_bin": lab,
+                "sample_count": int(count),
+                "mae": round(float(mae), 2),
+                "rmse": round(float(rmse), 2),
+                "mape": round(float(mape), 2),
+                "acc_within_5g": round(float(acc_5g), 2),
+                "acc_within_10g": round(float(acc_10g), 2),
+            })
+            print(f"{lab:<26}{count:<10}{mae:<12.2f}{rmse:<12.2f}{acc_5g:<15.1f}")
+        else:
+            records.append({
+                "weight_bin": lab,
+                "sample_count": 0,
+                "mae": 0.0,
+                "rmse": 0.0,
+                "mape": 0.0,
+                "acc_within_5g": 0.0,
+                "acc_within_10g": 0.0,
+            })
+
+    print("-" * 75)
+    df_stratified = pd.DataFrame(records)
+    df_stratified.to_csv(save_path, index=False)
+    print(f"[Evaluate] บันทึกตาราง Stratified Error ไปที่: {save_path}")
+    return df_stratified
+
+
+def plot_stratified_bars(stratified_df, save_path=None):
+    """พล็อตกราฟแท่งเปรียบเทียบ MAE และความแม่นยำแบ่งตามช่วงน้ำหนัก"""
+    save_path = save_path or RiceConfig.STRATIFIED_PLOT_PATH
+    if stratified_df.empty:
+        return
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+    bins = stratified_df["weight_bin"]
+    mae = stratified_df["mae"]
+    acc_5g = stratified_df["acc_within_5g"]
+    acc_10g = stratified_df["acc_within_10g"]
+
+    # กราฟที่ 1: MAE by Bin
+    bars1 = ax1.bar(bins, mae, color="#4C72B0", width=0.5)
+    ax1.set_title("Mean Absolute Error (MAE) by Weight Range", fontsize=12, fontweight="bold")
+    ax1.set_ylabel("MAE (grams)", fontsize=10)
+    ax1.tick_params(axis="x", rotation=15)
+    ax1.grid(axis="y", linestyle="--", alpha=0.7)
+    for bar in bars1:
+        yval = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width() / 2, yval + 0.1, f"{yval:.1f}g", ha="center", va="bottom", fontsize=9)
+
+    # กราฟที่ 2: Accuracy within ±5g and ±10g
+    x = np.arange(len(bins))
+    width = 0.35
+    bars2_1 = ax2.bar(x - width / 2, acc_5g, width, label="Acc within ±5g", color="#55A868")
+    bars2_2 = ax2.bar(x + width / 2, acc_10g, width, label="Acc within ±10g", color="#C44E52")
+    ax2.set_title("Clinical Accuracy (%) by Weight Range", fontsize=12, fontweight="bold")
+    ax2.set_ylabel("Accuracy (%)", fontsize=10)
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(bins, rotation=15)
+    ax2.set_ylim(0, 105)
+    ax2.legend(loc="lower right")
+    ax2.grid(axis="y", linestyle="--", alpha=0.7)
+
+    plt.tight_layout()
+    plt.savefig(save_path, bbox_inches="tight")
+    plt.close()
+    print(f"[Evaluate] บันทึกกราฟ Stratified Error Bars ไปที่: {save_path}")
+
+
+def plot_visual_gallery(test_paths, actual_labels, predictions, save_path=None, n_samples=16):
+    """รวมภาพผลการทำนายจริง (Clean Grid 4x4) แสดง Actual, Predicted และ Error โดยไม่มีกรอบสี"""
+    if test_paths is None or len(test_paths) == 0:
+        return
+
+    save_path = save_path or RiceConfig.VISUAL_GALLERY_PATH
+    actual = np.array(actual_labels)
+    pred = np.array(predictions)
+    errors = np.abs(pred - actual)
+
+    total_items = len(test_paths)
+    step = max(1, total_items // n_samples)
+    selected_indices = list(range(0, total_items, step))[:n_samples]
+
+    cols = 4
+    rows = int(np.ceil(len(selected_indices) / cols))
+
+    fig, axes = plt.subplots(rows, cols, figsize=(16, 4 * rows))
+    if hasattr(axes, "flatten"):
+        axes = axes.flatten()
+    else:
+        axes = [axes]
+
+    for idx, sample_idx in enumerate(selected_indices):
+        raw_path = str(test_paths[sample_idx])
+        img_path = resolve_image_path(raw_path)
+        act = actual[sample_idx]
+        pr = pred[sample_idx]
+        err = errors[sample_idx]
+
+        try:
+            if os.path.exists(img_path):
+                img = Image.open(img_path)
+                axes[idx].imshow(img)
+            else:
+                axes[idx].text(0.5, 0.5, f"Image not found:\n{os.path.basename(img_path)}", ha="center", va="center")
+            axes[idx].set_title(
+                f"Actual: {act:.1f}g | Pred: {pr:.1f}g\nError: {err:.1f}g",
+                fontsize=10,
+                color="#222222",
+                fontweight="normal",
+            )
+        except Exception as e:
+            axes[idx].text(0.5, 0.5, f"Error: {e}", ha="center", va="center")
+
+        axes[idx].axis("off")
+
+    for j in range(len(selected_indices), len(axes)):
+        axes[j].axis("off")
+
+    plt.suptitle("Sample Predictions on Test Set (Clean Gallery)", fontsize=14, fontweight="bold", y=0.98)
+    plt.tight_layout()
+    plt.savefig(save_path, bbox_inches="tight")
+    plt.close()
+    print(f"[Evaluate] บันทึกภาพ Gallery ผลทำนายจริง {len(selected_indices)} รูป ไปที่: {save_path}")
 
 
 def evaluate_kfold_summary(fold_metrics_list):
@@ -313,11 +505,16 @@ def evaluate_ensemble(models, test_dataset, test_labels, test_paths=None):
     try:
         plot_scatter_prediction(actual, ensemble_preds, save_path=RiceConfig.ENSEMBLE_SCATTER_PATH)
         plot_error_distribution(actual, ensemble_preds, save_path=RiceConfig.ENSEMBLE_ERROR_DIST_PATH)
-        if test_paths:
+        if test_paths is not None and len(test_paths) > 0:
             plot_worst_predictions(
                 test_paths, actual, ensemble_preds, top_k=12, save_path=RiceConfig.ENSEMBLE_WORST_PREDS_PATH
             )
+            plot_visual_gallery(
+                test_paths, actual, ensemble_preds, n_samples=16, save_path=RiceConfig.VISUAL_GALLERY_PATH
+            )
         save_prediction_table(actual, ensemble_preds, save_path=RiceConfig.ENSEMBLE_PRED_CSV_PATH)
+        stratified_df = calculate_stratified_errors(actual, ensemble_preds)
+        plot_stratified_bars(stratified_df)
     except Exception as e:
         print(f"[Evaluate] คำเตือน: เกิดข้อผิดพลาดในการบันทึกผล Ensemble: {e}")
 

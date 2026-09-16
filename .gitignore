@@ -29,3 +29,5 @@ access_token
 # 5. OS Generated Files
 .DS_Store
 Thumbs.db
+
+output/
