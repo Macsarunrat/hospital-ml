@@ -121,8 +121,9 @@ def load_and_preprocessing(path, label):
     """ฟังก์ชันโหลดรูปภาพแบบ Pure TensorFlow เพื่อทำ Image Pipeline"""
     image_raw = tf.io.read_file(path)
     image = tf.image.decode_jpeg(image_raw, channels=RiceConfig.IMAGE_CHANNELS)
+    img_size = RiceConfig.get_image_size()
     image = tf.image.resize_with_pad(
-        image, RiceConfig.IMAGE_SIZE[0], RiceConfig.IMAGE_SIZE[1]
+        image, img_size[0], img_size[1]
     )
     return image, label
 

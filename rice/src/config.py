@@ -8,23 +8,19 @@ class RiceConfig:
     TASK_NAME = "rice"
 
     # 2. Model Architecture (เลือกสถาปัตยกรรมโมเดลที่ต้องการเทรนได้ที่นี่โดยตรง)
-    # เช่น: "EfficientNetB0", "EfficientNetB1", "EfficientNetB2", "EfficientNetB3", "ResNet50"
-    BACKBONE = "EfficientNetB1"
+    # ตัวเลือกที่รองรับ: "EfficientNetB0" | "EfficientNetB1" | "EfficientNetV2B0" | "ResNet50V2"
+    BACKBONE = "EfficientNetV2B0"
     WEIGHTS = "imagenet"
     DENSE_UNITS = 64
     DROPOUT_RATE = 0.3
 
     # 3. Image & Data Settings
-    BACKBONE_IMAGE_SIZES = {
-        "EfficientNetB0": (224, 224),
-        "EfficientNetB1": (240, 240),
-        "EfficientNetB2": (260, 260),
-        "EfficientNetB3": (300, 300),
-        "EfficientNetB4": (380, 380),
-    }
-    IMAGE_SIZE = BACKBONE_IMAGE_SIZES.get(
-        BACKBONE, (240, 240) if "B1" in BACKBONE else (224, 224)
-    )
+    @classmethod
+    def get_image_size(cls):
+        from rice.src.models import get_model_image_size
+        return get_model_image_size(cls.BACKBONE)
+
+    IMAGE_SIZE = (224, 224)
     IMAGE_CHANNELS = 3
     BATCH_SIZE_PER_REPLICA = 32
     TEST_SPLIT = 0.1
@@ -69,6 +65,8 @@ class RiceConfig:
     STRATIFIED_CSV_PATH = os.path.join(OUTPUT_DIR, f"{TASK_NAME}_stratified_error.csv")
     STRATIFIED_PLOT_PATH = os.path.join(OUTPUT_DIR, f"{TASK_NAME}_stratified_error.png")
     VISUAL_GALLERY_PATH = os.path.join(OUTPUT_DIR, f"{TASK_NAME}_visual_predictions.png")
+    TRAINING_SUMMARY_TXT_PATH = os.path.join(OUTPUT_DIR, "training_config_summary.txt")
+    EXPERIMENT_MANIFEST_JSON_PATH = os.path.join(OUTPUT_DIR, f"{TASK_NAME}_experiment_manifest.json")
 
     # 8. WandB Logging
     WANDB_PROJECT = "hospital-ml"

@@ -9,6 +9,7 @@ from rice.src.evaluate import (
     evaluate_ensemble,
     evaluate_kfold_summary,
     evaluate_model,
+    save_training_summary,
 )
 from rice.src.metrics import calculate_metrics
 from rice.src.model import build_model, unfreeze_for_finetuning
@@ -127,7 +128,8 @@ def main():
             print("#" * 60)
 
             fold_best_path = os.path.join(
-                RiceConfig.OUTPUT_DIR, f"best_{RiceConfig.TASK_NAME}_model_fold_{fold_idx}.keras"
+                RiceConfig.OUTPUT_DIR,
+                f"best_{RiceConfig.TASK_NAME}_{RiceConfig.BACKBONE.lower()}_model_fold_{fold_idx}.keras",
             )
 
             model, h1, h2 = train_single_fold(
@@ -178,6 +180,22 @@ def main():
         logger.log_image("stratified_error", RiceConfig.STRATIFIED_PLOT_PATH)
         logger.log_image("visual_predictions", RiceConfig.VISUAL_GALLERY_PATH)
 
+        # บันทึกไฟล์สรุปสเปกการทดลอง (training_config_summary.txt)
+        save_training_summary(
+            extra_info={
+                "global_batch_size": global_batch_size,
+                "hardware_devices": [gpu.name for gpu in gpus] if gpus else ["CPU"],
+                "test_sample_count": len(test_labels) if test_labels is not None else "N/A",
+                "train_val_sample_count": sum(f["train_count"] + f["val_count"] for f in fold_datasets) // len(fold_datasets),
+                "wandb_url": getattr(logger, "run_url", "N/A"),
+                "ensemble_mae": round(float(ensemble_metrics["mae"]), 2),
+                "ensemble_rmse": round(float(ensemble_metrics["rmse"]), 2),
+                "ensemble_r2": round(float(ensemble_metrics["r2"]), 4),
+                "ensemble_acc_5g": round(float(ensemble_metrics["acc_within_5g"]), 1),
+                "ensemble_acc_10g": round(float(ensemble_metrics["acc_within_10g"]), 1),
+            }
+        )
+
     else:
         # ========================================================
         # โหมด Single Split ปกติ
@@ -213,6 +231,17 @@ def main():
         logger.log_image("scatter_prediction", RiceConfig.SCATTER_PLOT_PATH)
         logger.log_image("error_distribution", RiceConfig.ERROR_DIST_PLOT_PATH)
         logger.log_image("worst_predictions", RiceConfig.WORST_PREDS_PLOT_PATH)
+
+        save_training_summary(
+            extra_info={
+                "global_batch_size": global_batch_size,
+                "hardware_devices": [gpu.name for gpu in gpus] if gpus else ["CPU"],
+                "test_sample_count": len(test_labels) if test_labels is not None else "N/A",
+                "ensemble_mae": round(float(eval_metrics["mae"]), 2),
+                "ensemble_rmse": round(float(eval_metrics["rmse"]), 2),
+                "ensemble_r2": round(float(eval_metrics["r2"]), 4),
+            }
+        )
 
     logger.finish()
     print("\nกระบวนการเทรนและประเมินผลเสร็จสมบูรณ์เรียบร้อยแล้ว!")

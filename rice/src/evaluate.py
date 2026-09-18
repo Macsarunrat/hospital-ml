@@ -519,3 +519,159 @@ def evaluate_ensemble(models, test_dataset, test_labels, test_paths=None):
         print(f"[Evaluate] คำเตือน: เกิดข้อผิดพลาดในการบันทึกผล Ensemble: {e}")
 
     return metrics
+
+
+def save_training_summary(extra_info=None, txt_path=None, json_path=None):
+    """บันทึกไฟล์สรุปรายละเอียดการทดลองทั้งหมด (training_config_summary.txt และ JSON)
+
+    ช่วยให้สามารถตรวจสอบย้อนหลังได้ 100% ว่าโมเดลนี้ใช้อะไรเทรน ตั้งค่า Hyperparameters ไว้อย่างไร
+    """
+    import datetime
+    import platform
+    import tensorflow as tf
+
+    txt_path = txt_path or RiceConfig.TRAINING_SUMMARY_TXT_PATH
+    json_path = json_path or RiceConfig.EXPERIMENT_MANIFEST_JSON_PATH
+
+    info = {
+        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "platform": platform.platform(),
+        "python_version": platform.python_version(),
+        "tensorflow_version": tf.__version__,
+        "task_name": RiceConfig.TASK_NAME,
+        "backbone_model": RiceConfig.BACKBONE,
+        "pretrained_weights": RiceConfig.WEIGHTS,
+        "image_size": list(RiceConfig.get_image_size()),
+        "image_channels": RiceConfig.IMAGE_CHANNELS,
+        "image_preprocessing": "tf.image.resize_with_pad (Preserves Aspect Ratio with Zero Padding)",
+        "pooling_layer": "GlobalAveragePooling2D",
+        "dense_units": RiceConfig.DENSE_UNITS,
+        "dense_activation": "relu",
+        "dropout_rate": RiceConfig.DROPOUT_RATE,
+        "output_units": 1,
+        "output_activation": "linear (Continuous Weight in Grams)",
+        "augmentation_techniques": [
+            "RandomFlip(horizontal_and_vertical)",
+            "RandomRotation(0.2)",
+            "RandomZoom(0.2)",
+            "RandomContrast(0.2)",
+        ],
+        "batch_size_per_replica": RiceConfig.BATCH_SIZE_PER_REPLICA,
+        "mode": f"{RiceConfig.NUM_FOLDS}-Fold Cross-Validation" if RiceConfig.USE_KFOLD else "Single Split",
+        "num_folds": RiceConfig.NUM_FOLDS if RiceConfig.USE_KFOLD else 1,
+        "test_split_ratio": RiceConfig.TEST_SPLIT,
+        "val_split_ratio": RiceConfig.VAL_SPLIT,
+        "random_state": RiceConfig.RANDOM_STATE,
+        "phase1_epochs": RiceConfig.PHASE1_EPOCHS,
+        "phase1_optimizer": RiceConfig.PHASE1_OPTIMIZER,
+        "phase1_loss": RiceConfig.PHASE1_LOSS,
+        "phase1_backbone_trainable": False,
+        "phase2_epochs": RiceConfig.PHASE2_EPOCHS,
+        "phase2_optimizer": "adam",
+        "phase2_lr": RiceConfig.PHASE2_LR,
+        "phase2_batchnorm_trainable": False,
+        "early_stopping_patience": RiceConfig.EARLY_STOPPING_PATIENCE,
+        "early_stopping_monitor": "val_loss",
+        "reduce_lr_patience": RiceConfig.REDUCE_LR_PATIENCE,
+        "reduce_lr_factor": RiceConfig.REDUCE_LR_FACTOR,
+        "reduce_lr_min": RiceConfig.MIN_LR,
+        "reduce_lr_monitor": "val_loss",
+        "wandb_project": RiceConfig.WANDB_PROJECT,
+        "wandb_task": RiceConfig.WANDB_TASK,
+    }
+
+    if extra_info and isinstance(extra_info, dict):
+        info.update(extra_info)
+
+    # 1. เขียนไฟล์ข้อความ Text อ่านง่ายและละเอียด (training_config_summary.txt)
+    lines = [
+        "=" * 75,
+        "HOSPITAL ML - TRAINING CONFIGURATION & EXPERIMENT SUMMARY",
+        "=" * 75,
+        f"Timestamp               : {info['timestamp']}",
+        f"Platform / OS           : {info['platform']}",
+        f"Python / TensorFlow     : Python {info['python_version']} | TensorFlow {info['tensorflow_version']}",
+        f"Task Name               : {info['task_name']}",
+        f"Backbone Architecture   : {info['backbone_model']}",
+        f"Pretrained Weights      : {info['pretrained_weights']}",
+        f"Input Image Resolution  : {info['image_size'][0]} x {info['image_size'][1]} (Channels: {info['image_channels']})",
+        f"Image Resizing Method   : {info['image_preprocessing']}",
+        "",
+        "-" * 75,
+        "REGRESSION HEAD ARCHITECTURE",
+        "-" * 75,
+        f"Pooling Layer           : {info['pooling_layer']}",
+        f"Dense Hidden Layer      : {info['dense_units']} Units",
+        f"Dense Activation        : {info['dense_activation']}",
+        f"Dropout Regularization  : Rate = {info['dropout_rate']}",
+        f"Output Layer            : {info['output_units']} Unit (Continuous Value in Grams)",
+        f"Output Activation       : {info['output_activation']}",
+        "",
+        "-" * 75,
+        "DATA AUGMENTATION PIPELINE",
+        "-" * 75,
+        f"Augmentation Layers     : 1. RandomFlip(horizontal_and_vertical)",
+        f"                        : 2. RandomRotation(factor=0.2)",
+        f"                        : 3. RandomZoom(height_factor=0.2, width_factor=0.2)",
+        f"                        : 4. RandomContrast(factor=0.2)",
+        "",
+        "-" * 75,
+        "DATASET & CROSS-VALIDATION STRATEGY",
+        "-" * 75,
+        f"Validation Strategy     : {info['mode']}",
+        f"Number of Folds         : {info['num_folds']}",
+        f"Hold-out Test Set Split : {int(info['test_split_ratio'] * 100)}% ({info.get('test_sample_count', 'N/A')} samples)",
+        f"Train / Val Split Ratio : {int((1 - info['test_split_ratio']) * 100)}% ({info.get('train_val_sample_count', 'N/A')} samples across folds)",
+        f"Random State / Seed     : {info['random_state']}",
+        "",
+        "-" * 75,
+        "HARDWARE & DISTRIBUTED TRAINING",
+        "-" * 75,
+        f"Hardware Devices        : {info.get('hardware_devices', 'N/A')}",
+        f"Batch Size Per Replica  : {info['batch_size_per_replica']}",
+        f"Global Batch Size       : {info.get('global_batch_size', 'N/A')}",
+        "",
+        "-" * 75,
+        "OPTIMIZATION & TWO-PHASE TRAINING",
+        "-" * 75,
+        f"Phase 1 (Top Layers)    : {info['phase1_epochs']} Epochs | Optimizer: {info['phase1_optimizer']} | Loss: {info['phase1_loss']}",
+        f"  - Backbone Trainable  : {info['phase1_backbone_trainable']} (Frozen to preserve ImageNet features)",
+        f"Phase 2 (Fine-Tuning)   : {info['phase2_epochs']} Epochs | Optimizer: {info['phase2_optimizer']} | LR: {info['phase2_lr']}",
+        f"  - BatchNorm Trainable : {info['phase2_batchnorm_trainable']} (Frozen to stabilize Mean/Variance stats)",
+        f"Early Stopping          : monitor={info['early_stopping_monitor']}, patience={info['early_stopping_patience']}, restore_best=True",
+        f"Reduce LR on Plateau    : monitor={info['reduce_lr_monitor']}, factor={info['reduce_lr_factor']}, patience={info['reduce_lr_patience']}, min_lr={info['reduce_lr_min']}",
+        "",
+        "-" * 75,
+        "LOGGING & EXPERIMENT TRACKING",
+        "-" * 75,
+        f"WandB Project           : {info['wandb_project']}",
+        f"WandB Task / Run Name   : {info['wandb_task']}",
+        f"WandB Run URL           : {info.get('wandb_url', 'N/A')}",
+        "",
+        "-" * 75,
+        "FINAL EVALUATION METRICS (TEST SET ENSEMBLE)",
+        "-" * 75,
+        f"Ensemble MAE            : {info.get('ensemble_mae', 'N/A')} g",
+        f"Ensemble RMSE           : {info.get('ensemble_rmse', 'N/A')}",
+        f"Ensemble R² Score       : {info.get('ensemble_r2', 'N/A')}",
+        f"Accuracy within ±5g     : {info.get('ensemble_acc_5g', 'N/A')} %",
+        f"Accuracy within ±10g    : {info.get('ensemble_acc_10g', 'N/A')} %",
+        "=" * 75,
+    ]
+
+    try:
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        print(f"[Evaluate] บันทึกไฟล์สรุปรายละเอียดการเทรนไปที่: {txt_path}")
+    except Exception as e:
+        print(f"[Evaluate] คำเตือน: ไม่สามารถบันทึก {txt_path}: {e}")
+
+    try:
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(info, f, indent=4, ensure_ascii=False)
+        print(f"[Evaluate] บันทึก Manifest JSON ไปที่: {json_path}")
+    except Exception as e:
+        print(f"[Evaluate] คำเตือน: ไม่สามารถบันทึก {json_path}: {e}")
+
+    return info
+

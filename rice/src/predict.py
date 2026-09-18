@@ -37,8 +37,9 @@ def load_trained_model(model_path=None):
     return tf.keras.models.load_model(actual_path)
 
 
-def preprocess_image(image_path_or_bytes, image_size=RiceConfig.IMAGE_SIZE):
+def preprocess_image(image_path_or_bytes, image_size=None):
     """แปลงรูปภาพ 1 รูปให้เป็น Tensor พร้อมส่งเข้าโมเดล"""
+    target_size = image_size or RiceConfig.get_image_size()
     if isinstance(image_path_or_bytes, str):
         if not os.path.exists(image_path_or_bytes):
             raise FileNotFoundError(f"Image file not found: {image_path_or_bytes}")
@@ -47,7 +48,7 @@ def preprocess_image(image_path_or_bytes, image_size=RiceConfig.IMAGE_SIZE):
         image_raw = image_path_or_bytes
 
     image = tf.image.decode_jpeg(image_raw, channels=RiceConfig.IMAGE_CHANNELS)
-    image = tf.image.resize_with_pad(image, image_size[0], image_size[1])
+    image = tf.image.resize_with_pad(image, target_size[0], target_size[1])
     image = tf.expand_dims(image, axis=0)
     return image
 
