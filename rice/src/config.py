@@ -9,7 +9,7 @@ class RiceConfig:
 
     # 2. Model Architecture (เลือกสถาปัตยกรรมโมเดลที่ต้องการเทรนได้ที่นี่โดยตรง)
     # ตัวเลือกที่รองรับ: "ResNet50V2" | "ConvNeXtTiny" | "DenseNet121" | "EfficientNetV2B0" | "EfficientNetB0" | "EfficientNetB1"
-    BACKBONE = "ConvNeXtTiny"
+    BACKBONE = "DenseNet121"
     WEIGHTS = "imagenet"
     DENSE_UNITS = 64
     DROPOUT_RATE = 0.3
