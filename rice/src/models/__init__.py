@@ -1,4 +1,6 @@
 from rice.src.models import (
+    convnext_tiny,
+    densenet121,
     efficientnet_b0,
     efficientnet_b1,
     efficientnet_v2_b0,
@@ -25,6 +27,16 @@ MODEL_REGISTRY = {
         "builder": resnet50_v2.build_model,
         "unfreezer": resnet50_v2.unfreeze_for_finetuning,
         "image_size": resnet50_v2.IMAGE_SIZE,
+    },
+    "ConvNeXtTiny": {
+        "builder": convnext_tiny.build_model,
+        "unfreezer": convnext_tiny.unfreeze_for_finetuning,
+        "image_size": convnext_tiny.IMAGE_SIZE,
+    },
+    "DenseNet121": {
+        "builder": densenet121.build_model,
+        "unfreezer": densenet121.unfreeze_for_finetuning,
+        "image_size": densenet121.IMAGE_SIZE,
     },
 }
 

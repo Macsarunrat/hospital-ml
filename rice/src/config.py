@@ -8,8 +8,8 @@ class RiceConfig:
     TASK_NAME = "rice"
 
     # 2. Model Architecture (เลือกสถาปัตยกรรมโมเดลที่ต้องการเทรนได้ที่นี่โดยตรง)
-    # ตัวเลือกที่รองรับ: "EfficientNetB0" | "EfficientNetB1" | "EfficientNetV2B0" | "ResNet50V2"
-    BACKBONE = "ResNet50V2"
+    # ตัวเลือกที่รองรับ: "ResNet50V2" | "ConvNeXtTiny" | "DenseNet121" | "EfficientNetV2B0" | "EfficientNetB0" | "EfficientNetB1"
+    BACKBONE = "ConvNeXtTiny"
     WEIGHTS = "imagenet"
     DENSE_UNITS = 64
     DROPOUT_RATE = 0.3
